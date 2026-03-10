@@ -4,6 +4,8 @@
 
 This chart is deployed on `scgs-dev` (in the `customers` namespace) and manages the **complete Skupper deployment** for the cloud hub — controller, Site, and service exposure for **all DP clusters** that connect to it.
 
+**Chart location:** `helm-chart/` (aligned with the DP repo `skupper-on-ngsaas-DP-to-scgsdev`).
+
 Unlike the DP-side chart (one install per DP), this is a single, continuously evolving deployment:
 
 - **New DPs join** → add their envKey to the values, `helm upgrade`
@@ -67,7 +69,7 @@ Example for dev-dp6 (bridgeNamespace: `scai-dev`):
 | Listener | `customers` | `ns-dev--dev-dp6--stellar-conf-mongo` |
 | Bridge | `scai-dev` | `ns-dev--dev-dp6--stellar-conf-mongo` → `...customers.svc.cluster.local` |
 
-**Mechanism:** The values file uses `dpTypes[].envKeys[]` — each entry has a `key` (envKey) and `bridgeNamespace`. To onboard a new DP, add its entry and `helm upgrade`. The template loops over dpTypes x envKeys x instances to generate all Listeners and bridges.
+**Mechanism:** The values file uses `dpTypes[].envKeys[]` — each entry has a `key` (envKey) and `bridgeNamespace`. To onboard a new DP, add its entry to `helm-chart/values.yaml` and `helm upgrade`. The template loops over dpTypes x envKeys x instances to generate all Listeners and bridges.
 
 ### Layer 2: Shared Resources (fixed, serve all DPs)
 
@@ -98,7 +100,7 @@ scgs-dev cluster
 When a new NG-SaaS DP cluster joins (e.g., `prod-dp1`):
 
 **On this chart (scgs-dev side):**
-1. Add the DP entry to `mongodb.dpTypes[ng-saas].envKeys`:
+1. Add the DP entry to `helm-chart/values.yaml` under `mongodb.dpTypes[ng-saas].envKeys`:
    ```yaml
    envKeys:
      - key: ns_dev__dev-dp6
@@ -108,12 +110,12 @@ When a new NG-SaaS DP cluster joins (e.g., `prod-dp1`):
      - key: ns_prod__prod-dp1    # new
        bridgeNamespace: scai
    ```
-2. `helm upgrade skupper-expose-services-cloud . -n customers`
+2. `helm upgrade skupper-expose-services-cloud ./helm-chart -n customers`
 3. Three new MongoDB Listeners + bridge services are created automatically
 
 **On the DP side (prod-dp1):**
-1. Create `values-prod-dp1.yaml` with the cluster's `dpSite.clusterName` and `envKey`
-2. `helm install skupper-dp ./helm-chart -f helm-chart/values-prod-dp1.yaml`
+1. Create `values-prod-dp1.yaml` with the cluster's `dpSite.clusterName` and `envKey` (in the DP repo's `helm-chart/` directory)
+2. From the DP repo: `helm install skupper-dp ./helm-chart -f helm-chart/values-prod-dp1.yaml`
 3. Generate AccessGrant and activate
 
 No template changes needed on either side — just values.
@@ -128,7 +130,7 @@ RoutingKeys must match between DP Connectors/Listeners and hub Listeners/Connect
 |---------------------|---------------------|--------|
 | `ns-prod--salesdemo.stellar-conf-mongo` | `ns-prod--salesdemo.stellar-conf-mongo` | Must match |
 
-Both derive from the same `envKey` — the DP chart uses `chart-helper.envKeyDns` and the hub chart uses `skupper.sanitizeEnvKey`. As long as the envKey is the same in both values files, they match automatically.
+Both derive from the same `envKey` — the DP chart uses `chart-helper.envKeyDns` and the hub chart uses `skupper.sanitizeEnvKey` in `helm-chart/templates/_helpers.tpl`. As long as the envKey is the same in both values files, they match automatically.
 
 ### Kafka (shared, hub→DPs)
 
@@ -162,18 +164,20 @@ mongodb:
       instances: [stellar-conf-mongo, stellar-data-mongo, stellar-user-mongo]
       envKeys:
         - key: ns_dev__dev-dp6
-          bridgeNamespace: scai-dev    # apps in scai-dev access dev-dp6's MongoDB
+          bridgeNamespace: scai-dev
         - key: ns_prod__salesdemo
-          bridgeNamespace: scai        # apps in scai access salesdemo's MongoDB
+          bridgeNamespace: scai
         # Add new NG-SaaS DPs here
 
 # Layer 2: Shared resources (fixed, serve all DPs)
 kafka:
-  bootstrap: ...    # one bootstrap connector
-  brokers: ...      # per-broker connectors
+  bootstrap: ...
+  brokers: ...
 
-autosocCloud: ...   # one autosoc connector
+autosocCloud: ...
 ```
+
+See `helm-chart/values.yaml` for the full structure.
 
 ## Adding a New Service
 
@@ -181,14 +185,14 @@ When a new service needs to be exposed across the Skupper network:
 
 **Per-DP service (like MongoDB)** — each DP has its own instance:
 1. Add a new template (e.g., `04-listeners-redis.yaml`) with the same `dpTypes[].envKeys[]` loop pattern
-2. Add a new section in `values.yaml` (e.g., `redis:`) with instances and the same envKeys list
-3. `helm upgrade` on scgs-dev
+2. Add a new section in `helm-chart/values.yaml` (e.g., `redis:`) with instances and the same envKeys list
+3. `helm upgrade skupper-expose-services-cloud ./helm-chart -n customers`
 4. Add matching Connectors on the DP side
 
 **Shared service (like Kafka)** — one instance on scgs-dev serves all DPs:
 1. Add a new template (e.g., `05-connectors-elasticsearch.yaml`)
-2. Add a new section in `values.yaml` with the connector/listener config
-3. `helm upgrade` on scgs-dev
+2. Add a new section in `helm-chart/values.yaml` with the connector/listener config
+3. `helm upgrade skupper-expose-services-cloud ./helm-chart -n customers`
 4. Add matching Listeners on the DP side
 
 ## Controller Consolidation Plan
@@ -196,8 +200,8 @@ When a new service needs to be exposed across the Skupper network:
 Currently on scgs-dev, the Skupper controller is installed via a standalone `skupper` Helm release (v2.1.2, namespace scope). This chart includes the same controller as a subchart but defaults to `skupper.enabled: false`.
 
 To consolidate into a single release:
-1. Set `skupper.enabled: true` in values.yaml
-2. `helm upgrade skupper-expose-services-cloud . -n customers`
+1. Set `skupper.enabled: true` in helm-chart/values.yaml
+2. `helm upgrade skupper-expose-services-cloud ./helm-chart -n customers`
 3. Verify the new controller is running: `kubectl get pods -n skupper`
 4. `helm uninstall skupper -n customers` (remove the standalone release)
 
@@ -206,7 +210,7 @@ This upgrades from namespace scope to cluster scope and from v2.1.2 to v2.1.3.
 ## Deployment Flow
 
 ```
-helm upgrade --install skupper-expose-services-cloud . -n customers
+helm upgrade --install skupper-expose-services-cloud ./helm-chart -n customers
 ```
 
 Every change — new DPs, new services, scaling — is a `helm upgrade` on this single release.

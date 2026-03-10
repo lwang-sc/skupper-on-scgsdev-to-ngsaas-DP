@@ -2,6 +2,8 @@
 
 This Helm chart manages the complete Skupper deployment on the cloud hub cluster (scgs-dev), including the controller, Site, and all service exposure (Listeners, Connectors, Bridge Services).
 
+**Chart location:** `helm-chart/` (same layout as the companion DP repo `skupper-on-ngsaas-DP-to-scgsdev`).
+
 This chart runs on scgs-dev and handles the cloud side for **all** DP clusters. For each DP's own resources, see the companion chart `skupper-on-ngsaas-DP-to-scgsdev`.
 
 ## Overview
@@ -78,29 +80,32 @@ Using dev-dp6's MongoDB and Kafka connection as an example:
 ## Installation
 
 ```bash
-# Install/upgrade the chart
-helm upgrade --install skupper-expose-services-cloud . -n customers
+# From repo root: point to the helm-chart directory
+helm upgrade --install skupper-expose-services-cloud ./helm-chart -n customers
+
+# Or from helm-chart directory
+cd helm-chart && helm upgrade --install skupper-expose-services-cloud . -n customers
 
 # Verify resources
 kubectl get site,listeners,connectors -n customers
 
 # Dry-run to see what will be created
-helm template skupper-expose-services-cloud . -n customers
+helm template skupper-expose-services-cloud ./helm-chart -n customers
 
 # Show diff before upgrade
-helm diff upgrade skupper-expose-services-cloud . -n customers --suppress-secrets
+helm diff upgrade skupper-expose-services-cloud ./helm-chart -n customers --suppress-secrets
 ```
 
 ## Template Files
 
 | File | Purpose | Resources Created |
 |------|---------|-------------------|
-| `charts/skupper/` | Skupper controller subchart | CRDs, ServiceAccount, ClusterRole, Deployment |
-| `00-site.yaml` | Skupper Site for the hub | Site CR |
-| `01-listeners-mongodb.yaml` | MongoDB Listeners + bridge services | Listeners + ExternalName Services |
-| `02-connectors-kafka.yaml` | Kafka bootstrap + per-broker Connectors | Connectors + ExternalName Services |
-| `03-connectors-autosoc-cloud.yaml` | AutoSOC Cloud Connector | Connector + ExternalName Service |
-| `_helpers.tpl` | Shared template helpers | — |
+| `helm-chart/charts/skupper/` | Skupper controller subchart | CRDs, ServiceAccount, ClusterRole, Deployment |
+| `helm-chart/templates/00-site.yaml` | Skupper Site for the hub | Site CR |
+| `helm-chart/templates/01-listeners-mongodb.yaml` | MongoDB Listeners + bridge services | Listeners + ExternalName Services |
+| `helm-chart/templates/02-connectors-kafka.yaml` | Kafka bootstrap + per-broker Connectors | Connectors + ExternalName Services |
+| `helm-chart/templates/03-connectors-autosoc-cloud.yaml` | AutoSOC Cloud Connector | Connector + ExternalName Service |
+| `helm-chart/templates/_helpers.tpl` | Shared template helpers | — |
 
 ## Configuration
 
@@ -130,7 +135,7 @@ helm diff upgrade skupper-expose-services-cloud . -n customers --suppress-secret
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `mongodb.enabled` | Enable MongoDB Listeners | `true` |
-| `mongodb.dpTypes` | List of DP types with instances and envKeys | See values.yaml |
+| `mongodb.dpTypes` | List of DP types with instances and envKeys | See helm-chart/values.yaml |
 
 Each envKey entry specifies:
 - `key`: The envKey (can contain underscores, auto-sanitized for K8s names)
@@ -160,7 +165,7 @@ Each envKey entry specifies:
 
 ## Adding a New DP Cluster
 
-1. Add the DP entry to `mongodb.dpTypes[<type>].envKeys` in values.yaml:
+1. Add the DP entry to `mongodb.dpTypes[<type>].envKeys` in helm-chart/values.yaml:
 
 ```yaml
 mongodb:
@@ -178,7 +183,7 @@ mongodb:
 2. Deploy:
 
 ```bash
-helm upgrade skupper-expose-services-cloud . -n customers
+helm upgrade skupper-expose-services-cloud ./helm-chart -n customers
 ```
 
 3. Three new MongoDB Listeners + bridge services are created automatically.
@@ -275,5 +280,5 @@ kubectl logs -n customers -l skupper.io/component=router
 
 ## Related Charts
 
-- **`skupper-on-ngsaas-DP-to-scgsdev`**: DP-side chart (controller, Site, MongoDB Connectors, Kafka Listeners)
-- **`charts/skupper/`**: Skupper controller subchart (shared with DP-side chart)
+- **`skupper-on-ngsaas-DP-to-scgsdev`**: DP-side chart (controller, Site, MongoDB Connectors, Kafka Listeners); chart in `helm-chart/`
+- **`helm-chart/charts/skupper/`**: Skupper controller subchart (shared with DP-side chart)
