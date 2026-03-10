@@ -60,7 +60,7 @@ Standard labels for all resources managed by this chart.
 Usage: {{ include "skupper.commonLabels" . }}
 */}}
 {{- define "skupper.commonLabels" -}}
-app.kubernetes.io/name: skupper-expose-services-cloud
+app.kubernetes.io/name: skupper-scgs-dev
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}

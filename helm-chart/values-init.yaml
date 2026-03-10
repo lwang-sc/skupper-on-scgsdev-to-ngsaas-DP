@@ -1,0 +1,20 @@
+# =============================================================================
+# values-init.yaml — Initial install (everything enabled)
+# =============================================================================
+# Use this for the FIRST install on a clean cluster.
+# Installs: controller, network observer, Site, and all services.
+#
+# Usage:
+#   helm upgrade --install skupper-scgs-dev ./helm-chart \
+#     -n customers -f ./helm-chart/values-init.yaml
+#
+# After the initial install, switch to the default values.yaml (or
+# values-services-only.yaml) for subsequent upgrades so the controller
+# and observer are not re-applied on every helm upgrade.
+# =============================================================================
+
+skupper:
+  enabled: true
+
+network-observer:
+  enabled: true

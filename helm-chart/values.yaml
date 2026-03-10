@@ -9,7 +9,7 @@
 #   - MongoDB Listeners, Kafka Connectors, AutoSOC Connector, Bridge Services
 #
 # USAGE:
-#   helm upgrade --install skupper-expose-services-cloud . -n customers
+#   helm upgrade --install skupper-scgs-dev . -n customers
 #
 # =============================================================================
 
@@ -113,7 +113,7 @@ mongodb:
   # Labels attached to all MongoDB Listener resources
   labels:
     serviceType: mongodb
-    managedBy: skupper-expose-services-cloud
+    managedBy: skupper-scgs-dev
   
   # -----------------------------------------------------------------------------
   # DP Types Configuration
@@ -216,7 +216,7 @@ kafka:
     selector: strimzi.io/cluster=my-cluster,strimzi.io/kind=Kafka
     labels:
       serviceType: kafka
-      managedBy: skupper-expose-services-cloud
+      managedBy: skupper-scgs-dev
 
     # Bridge: customers ns → ykou ns (bootstrap service)
     bridgeService:
@@ -245,7 +245,7 @@ kafka:
     port: 9192
     labels:
       serviceType: kafka-broker
-      managedBy: skupper-expose-services-cloud
+      managedBy: skupper-scgs-dev
 
     # Bridge: customers ns → ykou ns (per-broker pod DNS)
     bridgeService:
@@ -283,7 +283,7 @@ autosocCloud:
 
   labels:
     serviceType: autosoc-cloud
-    managedBy: skupper-expose-services-cloud
+    managedBy: skupper-scgs-dev
 
   # Bridge: customers ns → scai-dev ns
   bridgeService:

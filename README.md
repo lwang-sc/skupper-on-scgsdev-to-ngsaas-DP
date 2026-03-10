@@ -81,19 +81,19 @@ Using dev-dp6's MongoDB and Kafka connection as an example:
 
 ```bash
 # From repo root: point to the helm-chart directory
-helm upgrade --install skupper-expose-services-cloud ./helm-chart -n customers
+helm upgrade --install skupper-scgs-dev ./helm-chart -n customers
 
 # Or from helm-chart directory
-cd helm-chart && helm upgrade --install skupper-expose-services-cloud . -n customers
+cd helm-chart && helm upgrade --install skupper-scgs-dev . -n customers
 
 # Verify resources
 kubectl get site,listeners,connectors -n customers
 
 # Dry-run to see what will be created
-helm template skupper-expose-services-cloud ./helm-chart -n customers
+helm template skupper-scgs-dev ./helm-chart -n customers
 
 # Show diff before upgrade
-helm diff upgrade skupper-expose-services-cloud ./helm-chart -n customers --suppress-secrets
+helm diff upgrade skupper-scgs-dev ./helm-chart -n customers --suppress-secrets
 ```
 
 ## Template Files
@@ -183,7 +183,7 @@ mongodb:
 2. Deploy:
 
 ```bash
-helm upgrade skupper-expose-services-cloud ./helm-chart -n customers
+helm upgrade skupper-scgs-dev ./helm-chart -n customers
 ```
 
 3. Three new MongoDB Listeners + bridge services are created automatically.

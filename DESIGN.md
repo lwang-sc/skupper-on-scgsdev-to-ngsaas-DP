@@ -110,7 +110,7 @@ When a new NG-SaaS DP cluster joins (e.g., `prod-dp1`):
      - key: ns_prod__prod-dp1    # new
        bridgeNamespace: scai
    ```
-2. `helm upgrade skupper-expose-services-cloud ./helm-chart -n customers`
+2. `helm upgrade skupper-scgs-dev ./helm-chart -n customers`
 3. Three new MongoDB Listeners + bridge services are created automatically
 
 **On the DP side (prod-dp1):**
@@ -186,13 +186,13 @@ When a new service needs to be exposed across the Skupper network:
 **Per-DP service (like MongoDB)** — each DP has its own instance:
 1. Add a new template (e.g., `04-listeners-redis.yaml`) with the same `dpTypes[].envKeys[]` loop pattern
 2. Add a new section in `helm-chart/values.yaml` (e.g., `redis:`) with instances and the same envKeys list
-3. `helm upgrade skupper-expose-services-cloud ./helm-chart -n customers`
+3. `helm upgrade skupper-scgs-dev ./helm-chart -n customers`
 4. Add matching Connectors on the DP side
 
 **Shared service (like Kafka)** — one instance on scgs-dev serves all DPs:
 1. Add a new template (e.g., `05-connectors-elasticsearch.yaml`)
 2. Add a new section in `helm-chart/values.yaml` with the connector/listener config
-3. `helm upgrade skupper-expose-services-cloud ./helm-chart -n customers`
+3. `helm upgrade skupper-scgs-dev ./helm-chart -n customers`
 4. Add matching Listeners on the DP side
 
 ## Controller Consolidation Plan
@@ -201,7 +201,7 @@ Currently on scgs-dev, the Skupper controller is installed via a standalone `sku
 
 To consolidate into a single release:
 1. Set `skupper.enabled: true` in helm-chart/values.yaml
-2. `helm upgrade skupper-expose-services-cloud ./helm-chart -n customers`
+2. `helm upgrade skupper-scgs-dev ./helm-chart -n customers`
 3. Verify the new controller is running: `kubectl get pods -n skupper`
 4. `helm uninstall skupper -n customers` (remove the standalone release)
 
@@ -210,7 +210,7 @@ This upgrades from namespace scope to cluster scope and from v2.1.2 to v2.1.3.
 ## Deployment Flow
 
 ```
-helm upgrade --install skupper-expose-services-cloud ./helm-chart -n customers
+helm upgrade --install skupper-scgs-dev ./helm-chart -n customers
 ```
 
 Every change — new DPs, new services, scaling — is a `helm upgrade` on this single release.

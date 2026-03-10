@@ -1,0 +1,19 @@
+# =============================================================================
+# values-services-only.yaml — Skip controller and observer
+# =============================================================================
+# Use this for day-to-day upgrades (adding DPs, scaling Kafka, etc.)
+# when the controller and observer are already running.
+#
+# Usage:
+#   helm upgrade skupper-scgs-dev ./helm-chart \
+#     -n customers -f ./helm-chart/values-services-only.yaml
+#
+# This is equivalent to the default values.yaml (both toggles are false
+# by default), but made explicit for clarity and ArgoCD profiles.
+# =============================================================================
+
+skupper:
+  enabled: false
+
+network-observer:
+  enabled: false

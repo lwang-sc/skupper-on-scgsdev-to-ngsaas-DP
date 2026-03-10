@@ -20,7 +20,7 @@
 #
 # =============================================================================
 apiVersion: v2
-name: skupper-expose-services-cloud
+name: skupper-scgs-dev
 description: Skupper cloud hub deployment — controller, Site, and service exposure for scgs-dev connectivity with DP clusters
 type: application
 version: 0.2.0
