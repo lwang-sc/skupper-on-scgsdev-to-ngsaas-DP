@@ -1,0 +1,161 @@
+===========================================================
+  Skupper Expose Services Cloud - {{ .Release.Name }}
+===========================================================
+
+Cluster: scgs-dev (hub)
+Namespace: {{ .Values.namespace }}
+
+-----------------------------------------------------------
+Components Status:
+-----------------------------------------------------------
+{{- if .Values.mongodb.enabled }}
+  [✓] MongoDB Listeners by DP Type:
+  {{- range $dpType := .Values.mongodb.dpTypes }}
+  {{- if $dpType.envKeys }}
+      
+      {{ $dpType.name | upper }} DPs ({{ len $dpType.instances }} instance(s) each):
+      {{- range $envKey := $dpType.envKeys }}
+        - {{ $envKey.key }} (bridge → {{ $envKey.bridgeNamespace }}):
+        {{- range $instance := $dpType.instances }}
+          {{ include "skupper.mongoResourceName" (dict "envKey" $envKey.key "instance" $instance.name) }}
+            routingKey: {{ include "skupper.mongoRoutingKey" (dict "envKey" $envKey.key "instance" $instance.name) }}
+            host: {{ include "skupper.mongoResourceName" (dict "envKey" $envKey.key "instance" $instance.name) }}:{{ $instance.port }}
+        {{- end }}
+      {{- end }}
+  {{- end }}
+  {{- end }}
+{{- else }}
+  [○] MongoDB Listeners: Disabled
+{{- end }}
+
+{{- if .Values.kafka.bootstrap.enabled }}
+  [✓] Kafka Bootstrap Connector: {{ .Values.kafka.bootstrap.name }}
+      - routingKey: {{ .Values.kafka.bootstrap.routingKey }}
+      {{- if .Values.kafka.bootstrap.bridgeService.enabled }}
+      - host: {{ .Values.kafka.bootstrap.bridgeService.name }} (bridge service)
+      - bridge: {{ .Values.kafka.bootstrap.bridgeService.name }} → {{ .Values.kafka.bootstrap.bridgeService.targetService }}.{{ .Values.kafka.bootstrap.bridgeService.targetNamespace }}
+      {{- else }}
+      - selector: {{ .Values.kafka.bootstrap.selector }}
+      {{- end }}
+      - port: {{ .Values.kafka.bootstrap.port }}
+  {{- if .Values.kafka.brokers.enabled }}
+  [✓] Kafka Broker Connectors ({{ .Values.kafka.brokers.replicas }}):
+  {{- $replicas := .Values.kafka.brokers.replicas | int }}
+  {{- range $i := until $replicas }}
+      - {{ $.Values.kafka.brokers.namePrefix }}-{{ $i }} (routingKey: {{ $.Values.kafka.brokers.routingKeyPrefix }}-{{ $i }}) → {{ $.Values.kafka.brokers.bridgeService.podNamePrefix }}-{{ $i }}.{{ $.Values.kafka.brokers.bridgeService.headlessService }}.{{ $.Values.kafka.brokers.bridgeService.targetNamespace }}
+  {{- end }}
+  {{- end }}
+{{- else }}
+  [○] Kafka Connector: Disabled
+{{- end }}
+
+{{- if .Values.autosocCloud.enabled }}
+  [✓] AutoSOC Cloud Connector [TESTING]:
+      - name: {{ .Values.autosocCloud.name }}
+      - routingKey: {{ .Values.autosocCloud.routingKey }}
+      - port: {{ .Values.autosocCloud.port }} (HTTP)
+      - host: {{ .Values.autosocCloud.bridgeService.name }} (bridge service)
+      - bridge: {{ .Values.autosocCloud.bridgeService.name }} → {{ .Values.autosocCloud.bridgeService.targetService }}.{{ .Values.autosocCloud.bridgeService.targetNamespace }}
+      ⚠ This is for EARLY INTEGRATION TESTING only
+{{- else }}
+  [○] AutoSOC Cloud Connector: Disabled
+{{- end }}
+
+-----------------------------------------------------------
+{{- if and .Values.mongodb.enabled .Values.kafka.bootstrap.enabled }}
+ALL COMPONENTS INSTALLED
+-----------------------------------------------------------
+
+Prerequisites Checklist:
+  [?] Site 'scgs-dev' exists in '{{ .Values.namespace }}' namespace
+  [?] DP clusters have Listeners with matching routingKeys
+  [?] Links established between hub and DP clusters
+  [?] Strimzi advertisedHost configured per broker
+
+{{- else }}
+PARTIAL INSTALL
+-----------------------------------------------------------
+
+Some components are disabled. Current state:
+  - MongoDB Listeners: {{ if .Values.mongodb.enabled }}enabled{{ else }}disabled{{ end }}
+  - Kafka Bootstrap: {{ if .Values.kafka.bootstrap.enabled }}enabled{{ else }}disabled{{ end }}
+  - Kafka Brokers: {{ if .Values.kafka.brokers.enabled }}enabled{{ else }}disabled{{ end }}
+
+To enable all components:
+  helm upgrade {{ .Release.Name }} . -n {{ .Values.namespace }} \
+    --set mongodb.enabled=true \
+    --set kafka.bootstrap.enabled=true \
+    --set kafka.brokers.enabled=true
+
+{{- end }}
+
+-----------------------------------------------------------
+Verification Commands:
+-----------------------------------------------------------
+  # Check Skupper Site
+  kubectl get sites -n {{ .Values.namespace }}
+
+  # Check Links from DP clusters
+  kubectl get links -n {{ .Values.namespace }}
+
+  # Check Listeners (MongoDB)
+  kubectl get listeners -n {{ .Values.namespace }}
+
+  # Check Connectors (Kafka)
+  kubectl get connectors -n {{ .Values.namespace }}
+
+  # Check Services created by Listeners
+  kubectl get svc -n {{ .Values.namespace }} | grep stellar
+
+  # Check Skupper router pods
+  kubectl get pods -n {{ .Values.namespace }} -l skupper.io/component=router
+
+Logs:
+  kubectl logs -n {{ .Values.namespace }} -l skupper.io/component=router
+
+-----------------------------------------------------------
+MongoDB Connection Strings (for applications on scgs-dev):
+-----------------------------------------------------------
+{{- if .Values.mongodb.enabled }}
+{{- range $dpType := .Values.mongodb.dpTypes }}
+{{- if $dpType.envKeys }}
+  # {{ $dpType.name | upper }} DPs:
+  {{- range $envKey := $dpType.envKeys }}
+  # {{ $envKey.key }} (access from {{ $envKey.bridgeNamespace }} namespace):
+  {{- range $instance := $dpType.instances }}
+  mongodb://{{ include "skupper.mongoResourceName" (dict "envKey" $envKey.key "instance" $instance.name) }}.{{ $envKey.bridgeNamespace }}:{{ $instance.port }}/
+  {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- else }}
+  MongoDB Listeners are disabled.
+{{- end }}
+
+-----------------------------------------------------------
+Adding a New DP Cluster:
+-----------------------------------------------------------
+  1. Find the matching dpType in values.yaml and add the envKey:
+     
+     mongodb:
+       dpTypes:
+         - name: ng-saas        # or pre-saas, on-prem
+           instances: [...]      # Already defined, don't change
+           envKeys:
+             - key: existing-dp-1
+               bridgeNamespace: scai-dev
+             - key: <new-dp-env-key>       # Add your new DP here
+               bridgeNamespace: <scai or scai-dev>
+     
+     Note: envKey can contain underscores (e.g., ns_dev__new-dp).
+           They will be automatically sanitized for K8s resource names.
+
+  2. Deploy the updated chart:
+     helm upgrade {{ .Release.Name }} . -n {{ .Values.namespace }}
+
+  3. Ensure the new DP has:
+     - Skupper Site created
+     - Connectors with matching routingKeys
+     - Link established to this hub
+
+===========================================================

@@ -1,0 +1,9 @@
+dependencies:
+- name: skupper
+  repository: file://charts/skupper
+  version: 2.1.3
+- name: network-observer
+  repository: file://charts/network-observer
+  version: 2.1.3
+digest: sha256:2a597473fe278ac40ac2d0c6f77d9615fecb4b5fb738f308681cfc397ce05598
+generated: "2026-03-10T02:17:33.288778-07:00"

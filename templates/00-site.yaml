@@ -1,0 +1,36 @@
+{{/*
+# =============================================================================
+# 00-site.yaml - Skupper Site for Cloud Hub
+# =============================================================================
+#
+# PURPOSE:
+#   Creates the Skupper Site on the cloud hub cluster (scgs-dev).
+#   This is the hub site that all DP clusters connect to via Links.
+#
+# TOGGLE:
+#   Set site.enabled=true for initial deployment, then leave it alone.
+#   The Site is the foundation — all Listeners, Connectors, and Links depend on it.
+#
+# IMPORTANT:
+#   - This is a HUB site (not edge) — it needs linkAccess for DPs to connect
+#   - The grant server (configured in skupper subchart) issues AccessGrants
+#   - Do NOT disable this after DPs have established links
+#
+# =============================================================================
+*/}}
+{{- if .Values.site.enabled }}
+---
+apiVersion: skupper.io/v2alpha1
+kind: Site
+metadata:
+  name: {{ .Values.site.name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    description: >-
+      Skupper hub site for cloud cluster {{ .Values.site.name }}.
+      All NG-SaaS, Pre-SaaS, and On-Prem DP clusters connect to this site.
+  labels:
+    {{- include "skupper.commonLabels" . | nindent 4 }}
+spec:
+  linkAccess: {{ .Values.site.linkAccess }}
+{{- end }}

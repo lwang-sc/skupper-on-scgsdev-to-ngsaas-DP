@@ -1,0 +1,8 @@
+{{- if .Values.controllerNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.controllerNamespace }}
+  labels:
+    purpose: skupper-controller
+{{- end }}

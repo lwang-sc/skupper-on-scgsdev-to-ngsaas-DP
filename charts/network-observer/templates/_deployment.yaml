@@ -1,0 +1,78 @@
+
+{{- define "network-observer.proxyVolumeMounts" -}}
+{{- $authStrategies := list "basic" "openshift" "none" }}
+{{- if not (has .Values.auth.strategy $authStrategies) }}
+  {{- fail (printf "auth.strategy must be one of %s" $authStrategies) }}
+{{- end }}
+
+{{- if eq .Values.auth.strategy "openshift" }}
+- name: session-cookie-secret
+  secret:
+    defaultMode: 420
+    secretName: {{ include "network-observer.sessionCookieSecretName" . }}
+{{- else }}
+- name: nginx-config
+  configMap:
+    defaultMode: 420
+    name: {{ include "network-observer.nginxConfigMapName" . }}
+{{- if eq .Values.auth.strategy "basic" }}
+- name: nginx-htpasswd
+  secret:
+    defaultMode: 420
+    secretName: {{ include "network-observer.basicAuthSecretName" . }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{- define "network-observer.nginxProxySpec" -}}
+image: "{{ .Values.nginx.repository }}:{{ .Values.nginx.tag }}"
+imagePullPolicy: {{ .Values.nginx.pullPolicy }}
+{{- with .Values.nginx.command }}
+command:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .Values.nginx.securityContext }}
+securityContext:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+ports:
+  - name: https
+    containerPort: 8443
+    protocol: TCP
+volumeMounts:
+  - mountPath: /etc/certificates/
+    name: {{ include "network-observer.tlsSecretName" . }}
+  - mountPath: /etc/nginx
+    name: nginx-config
+{{- if eq .Values.auth.strategy "basic" }}
+  - mountPath: /etc/httpusers
+    name: nginx-htpasswd
+{{- end }}
+{{- end -}}
+
+{{- define "network-observer.openshiftOauthProxySpec" -}}
+image: "{{ .Values.openshiftOauthProxy.repository }}:{{ .Values.openshiftOauthProxy.tag }}"
+imagePullPolicy: {{ .Values.openshiftOauthProxy.pullPolicy }}
+{{- with .Values.openshiftOauthProxy.securityContext }}
+securityContext:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+args:
+  - --https-address=:8443
+  - --provider=openshift
+  - --openshift-service-account={{ (include "network-observer.serviceAccountName" .) }}
+  - --upstream=http://127.0.0.1:8080
+  - -tls-cert=/etc/certificates/tls.crt
+  - -tls-key=/etc/certificates/tls.key
+  - -cookie-secret-file=/etc/session-secrets/secret
+ports:
+  - name: https
+    containerPort: 8443
+    protocol: TCP
+volumeMounts:
+  - mountPath: /etc/certificates/
+    name: {{ include "network-observer.tlsSecretName" . }}
+  - mountPath: /etc/session-secrets/
+    name: session-cookie-secret
+{{- end -}}
+

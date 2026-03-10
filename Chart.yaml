@@ -1,0 +1,47 @@
+# =============================================================================
+# Skupper Expose Services - Cloud Hub
+# =============================================================================
+#
+# This chart manages the Skupper deployment on the cloud hub cluster (scgs-dev),
+# including the controller, Site, and all service exposure (Listeners/Connectors).
+#
+# WHAT THIS CHART MANAGES:
+#   - Skupper Controller: CRDs + controller deployment (via subchart, toggleable)
+#   - Network Observer: Skupper Console UI + telemetry (via subchart, toggleable)
+#   - Skupper Site: The hub site that DPs connect to (toggleable)
+#   - MongoDB Listeners: Create K8s Services that route to MongoDB on DP clusters
+#   - Kafka Connectors: Expose local Kafka broker to DP clusters via Skupper
+#   - AutoSOC Connector: Expose autosoc-cloud to DP clusters
+#   - Bridge Services: ExternalName services for cross-namespace access
+#
+# TRAFFIC FLOW:
+#   MongoDB: scgs-dev (client via Listener) → DP cluster (MongoDB server via Connector)
+#   Kafka:   DP cluster (producer via Listener) → scgs-dev (Kafka broker via Connector)
+#
+# =============================================================================
+apiVersion: v2
+name: skupper-expose-services-cloud
+description: Skupper cloud hub deployment — controller, Site, and service exposure for scgs-dev connectivity with DP clusters
+type: application
+version: 0.2.0
+appVersion: "2.1.3"
+
+dependencies:
+  - name: skupper
+    version: "2.1.3"
+    repository: "file://charts/skupper"
+    condition: skupper.enabled
+  - name: network-observer
+    version: "2.1.3"
+    repository: "file://charts/network-observer"
+    condition: network-observer.enabled
+
+keywords:
+  - skupper
+  - service-mesh
+  - multi-cluster
+  - mongodb
+  - kafka
+
+maintainers:
+  - name: Data Platform Team

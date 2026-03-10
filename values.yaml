@@ -1,0 +1,312 @@
+# =============================================================================
+# Skupper Expose Services - Cloud Hub Values
+# =============================================================================
+#
+# This chart manages the full Skupper deployment on the cloud hub cluster:
+#   - Skupper Controller (subchart, toggleable)
+#   - Network Observer / Console (subchart, toggleable)
+#   - Skupper Site (toggleable)
+#   - MongoDB Listeners, Kafka Connectors, AutoSOC Connector, Bridge Services
+#
+# USAGE:
+#   helm upgrade --install skupper-expose-services-cloud . -n customers
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Namespace Configuration
+# -----------------------------------------------------------------------------
+# The namespace where the Skupper Site exists on the hub cluster.
+# This is where all Listeners and Connectors will be created.
+namespace: customers
+
+# =============================================================================
+# 1. Skupper Controller (subchart: charts/skupper/)
+# =============================================================================
+# Installs the Skupper CRDs and controller deployment.
+# On scgs-dev the controller is already installed via a standalone 'skupper'
+# Helm release. Set enabled=false to skip re-installing.
+# When ready to consolidate, set enabled=true and uninstall the standalone release.
+#
+# Hub site needs grant server enabled so DPs can request AccessGrants.
+skupper:
+  enabled: false          # Set true to manage controller via this chart
+  controllerNamespace: skupper   # Controller deployed in dedicated 'skupper' namespace
+  controllerImage: quay.io/skupper/controller:2.1.3
+  kubeAdaptorImage: quay.io/skupper/kube-adaptor:2.1.3
+  routerImage: quay.io/skupper/skupper-router:3.4.2
+  scope: cluster          # Cluster scope — one controller manages all namespaces
+  grantServer:
+    enabled: true         # Hub site — grant server needed for DP link activation
+
+# =============================================================================
+# 2. Network Observer (subchart: charts/network-observer/)
+# =============================================================================
+# Skupper Console UI + telemetry. Collects operational data from all sites
+# and provides a web dashboard for monitoring the Skupper network.
+#
+# Must be in the SAME namespace as the Skupper Site (customers) because it
+# connects to skupper-router-local.
+#
+# On scgs-dev the observer is already installed via a standalone
+# 'skupper-network-observer' Helm release. Set enabled=false to skip.
+# When ready to consolidate, set enabled=true and uninstall the standalone release.
+network-observer:
+  enabled: false          # Set true to manage observer via this chart
+  fullnameOverride: skupper-network-observer  # Match existing service name on scgs-dev
+  service:
+    type: LoadBalancer    # Matches current scgs-dev setup
+  auth:
+    strategy: "none"      # No authentication
+  tls:
+    skupperIssued: true   # TLS cert issued by Skupper controller
+
+# =============================================================================
+# 3. Skupper Site
+# =============================================================================
+# The hub site that all DP clusters connect to.
+# Set enabled=true on first deploy, then leave it alone.
+# linkAccess: "default" allows DPs to connect using AccessGrants.
+site:
+  enabled: true
+  name: scgs-dev
+  linkAccess: default
+
+# -----------------------------------------------------------------------------
+# MongoDB Listeners Configuration
+# -----------------------------------------------------------------------------
+# Listeners create LOCAL K8s Services that route to REMOTE MongoDB instances.
+# Direction: scgs-dev (client) → DP cluster (MongoDB server)
+#
+# DP TYPES AND THEIR MONGODB INSTANCES:
+#   - ng-saas:  3 instances (stellar-conf-mongo, stellar-data-mongo, stellar-user-mongo)
+#   - pre-saas: 1 instance (mongodb)
+#   - on-prem:  1 instance (mongodb)
+#
+# How it works:
+#   1. Listener creates a K8s Service with the specified 'host' name
+#   2. Applications on scgs-dev connect to this service
+#   3. Traffic is tunneled through Skupper to the DP cluster
+#   4. The Connector on the DP forwards to the actual MongoDB pods
+#
+# NAMING CONVENTION:
+#   - routingKey: {envKey}.{mongo-name} (must match Connector on DP, can contain dots)
+#   - host/name: {sanitized-envKey}-{mongo-name} (K8s Service name, uses HYPHEN not dot)
+#
+# ENVKEY SANITIZATION:
+#   envKeys can contain underscores (e.g., ns_dev__dev-dp6), but K8s resource names
+#   cannot. The chart automatically sanitizes envKeys by replacing underscores with
+#   hyphens for resource names (e.g., ns_dev__dev-dp6 → ns-dev--dev-dp6).
+#
+# IMPORTANT: Kubernetes Service names must follow DNS-1035:
+#   - Must start with a letter
+#   - Can only contain lowercase letters, numbers, and hyphens
+#   - Cannot contain dots (.) or underscores (_)
+#
+# Prerequisites:
+#   - Corresponding Connectors must exist on DP clusters with matching routingKeys
+#   - Link must be established between scgs-dev and the DP cluster
+#
+mongodb:
+  enabled: true
+  
+  # Labels attached to all MongoDB Listener resources
+  labels:
+    serviceType: mongodb
+    managedBy: skupper-expose-services-cloud
+  
+  # -----------------------------------------------------------------------------
+  # DP Types Configuration
+  # -----------------------------------------------------------------------------
+  # Structure:
+  #   - dpTypes: Array of DP type configurations
+  #     - name: Type identifier (ng-saas, pre-saas, on-prem)
+  #     - instances: Fixed MongoDB instances for this type (defined once)
+  #     - envKeys: List of DP envKeys of this type (add new DPs here)
+  #
+  # To add a new DP cluster:
+  #   1. Find the matching dpType section below
+  #   2. Add the envKey to the envKeys list (can include underscores)
+  #   3. Deploy the helm chart
+  #   4. Ensure the DP has Connectors with matching routingKeys
+  #
+  dpTypes:
+    # -------------------------------------------------------------------------
+    # NG-SaaS DPs - 3 MongoDB instances each
+    # -------------------------------------------------------------------------
+    - name: ng-saas
+      # Fixed instances for all NG-SaaS DPs
+      instances:
+        - name: stellar-conf-mongo # this should be the service name
+          port: 27017
+        - name: stellar-data-mongo
+          port: 27017
+        - name: stellar-user-mongo
+          port: 27017
+      # List of NG-SaaS DPs (add new NG-SaaS DPs here)
+      # Each entry:
+      #   key:             envKey (can contain underscores, auto-sanitized for K8s names)
+      #   bridgeNamespace: namespace where ExternalName bridge services are created
+      #                    so apps in that namespace can access the DP's MongoDB
+      envKeys:
+        - key: ns_dev__dev-dp6
+          bridgeNamespace: scai-dev     # ML team dev apps access dev-dp6's MongoDB here
+        - key: ns_prod__salesdemo
+          bridgeNamespace: scai         # salesdemo apps access salesdemo's MongoDB here
+        # - key: ns_dev__dev-dp3
+        #   bridgeNamespace: scai-dev
+    
+    # -------------------------------------------------------------------------
+    # Pre-SaaS DPs - 1 MongoDB instance each
+    # -------------------------------------------------------------------------
+    - name: pre-saas
+      instances:
+        - name: mongodb
+          port: 27017
+      envKeys: []
+        # - key: pre_saas__customer1
+        #   bridgeNamespace: scai
+    
+    # -------------------------------------------------------------------------
+    # On-Prem DPs - 1 MongoDB instance each
+    # -------------------------------------------------------------------------
+    - name: on-prem
+      instances:
+        - name: mongodb
+          port: 27017
+      envKeys: []
+        # - key: on_prem__customer1
+        #   bridgeNamespace: scai
+
+# -----------------------------------------------------------------------------
+# Kafka Connectors Configuration
+# -----------------------------------------------------------------------------
+# Exposes the Kafka cluster on scgs-dev to the Skupper network.
+# Direction: DP clusters (producers) → scgs-dev (Kafka broker)
+#
+# Two types of Connectors are created:
+#   1. Bootstrap: Initial client connection to get broker metadata
+#   2. Brokers: Direct per-broker connections after bootstrap handshake
+#
+# CROSS-NAMESPACE ACCESS:
+#   Kafka is in 'ykou' namespace, Skupper Site is in 'customers'.
+#   Bridge services (ExternalName) bridge the namespace gap for both
+#   bootstrap and per-broker connections.
+#
+# Prerequisites:
+#   - Kafka service must exist in the target namespace
+#   - Links must be established between scgs-dev and DP clusters
+#   - Strimzi advertisedHost must be configured per broker
+#
+kafka:
+  # ---------------------------------------------------------------------------
+  # Bootstrap — routes to my-cluster-kafka-bootstrap (initial connection)
+  # ---------------------------------------------------------------------------
+  # NOTE: Bootstrap uses port 9192 (Strimzi internal listener), NOT 9092.
+  #   DP apps still connect to kafka:9092 (Listener port), but Skupper routes
+  #   the traffic to port 9192 on the actual Kafka bootstrap service.
+  #   The Listener and Connector ports are decoupled — only routingKey must match.
+  #
+  bootstrap:
+    enabled: true
+    name: scgs-dev-kafka
+    routingKey: scgs-dev-kafka
+    port: 9192
+    # selector used when bridgeService is disabled (Kafka in same namespace)
+    selector: strimzi.io/cluster=my-cluster,strimzi.io/kind=Kafka
+    labels:
+      serviceType: kafka
+      managedBy: skupper-expose-services-cloud
+
+    # Bridge: customers ns → ykou ns (bootstrap service)
+    bridgeService:
+      enabled: true
+      name: scgs-dev-kafka-bridge
+      targetNamespace: ykou
+      targetService: my-cluster-kafka-bootstrap
+
+  # ---------------------------------------------------------------------------
+  # Brokers — routes to individual broker pods (after bootstrap handshake)
+  # ---------------------------------------------------------------------------
+  # NOTE: Brokers also use port 9192 (same Strimzi internal listener as bootstrap).
+  #   DL-side Listeners expose kafka-broker-{i}:9192 locally.
+  #
+  # SCALING STRATEGY:
+  #   Set replicas to match actual Strimzi broker count. When Kafka scales up:
+  #   1. Developer adds broker + updates advertisedHost on Strimzi
+  #   2. Bump replicas here and helm upgrade
+  #   3. Pre-deployed idle Listeners on DPs auto-match — no DP-side change needed
+  #
+  brokers:
+    enabled: true
+    replicas: 3
+    namePrefix: scgs-dev-kafka-broker
+    routingKeyPrefix: scgs-dev-kafka-broker
+    port: 9192
+    labels:
+      serviceType: kafka-broker
+      managedBy: skupper-expose-services-cloud
+
+    # Bridge: customers ns → ykou ns (per-broker pod DNS)
+    bridgeService:
+      enabled: true
+      targetNamespace: ykou
+      headlessService: my-cluster-kafka-brokers
+      podNamePrefix: my-cluster-dual-role
+
+# -----------------------------------------------------------------------------
+# AutoSOC Cloud Connector Configuration
+# -----------------------------------------------------------------------------
+# *** EARLY INTEGRATION TESTING ONLY ***
+# This section is for testing autosoc-cloud connectivity from DP clusters.
+# Remove or revisit before production use.
+#
+# Exposes the autosoc-cloud HTTP service (in scai-dev namespace on scgs-dev)
+# to the Skupper network. DP clusters consume this service via Listeners.
+#
+# Service details (on scgs-dev):
+#   - Service: autosoc-cloud.scai-dev.svc.cluster.local
+#   - Port: 8000 (HTTP)
+#   - Pods: autosoc-cloud-* (3 replicas)
+#
+# Direction: DP clusters (HTTP client) → scgs-dev (autosoc-cloud server)
+#
+# CROSS-NAMESPACE ACCESS:
+#   autosoc-cloud is in 'scai-dev' namespace, Skupper Site is in 'customers'.
+#   Bridge service (ExternalName) bridges the namespace gap.
+#
+autosocCloud:
+  enabled: true
+  name: scgs-dev--scai-dev--autosoc-cloud
+  routingKey: scgs-dev--scai-dev--autosoc-cloud
+  port: 8000
+
+  labels:
+    serviceType: autosoc-cloud
+    managedBy: skupper-expose-services-cloud
+
+  # Bridge: customers ns → scai-dev ns
+  bridgeService:
+    name: scgs-dev--scai-dev--autosoc-cloud-bridge
+    targetNamespace: scai-dev
+    targetService: autosoc-cloud
+
+# -----------------------------------------------------------------------------
+# Additional Listeners (for future services)
+# -----------------------------------------------------------------------------
+# Uncomment and configure to add more listeners for other DP services
+# additionalListeners:
+#   - name: redis-dp6
+#     routingKey: ns-dev--dev-dp6.redis
+#     host: ns-dev--dev-dp6.redis.stellar.internal
+#     port: 6379
+
+# -----------------------------------------------------------------------------
+# Additional Connectors (for future services)
+# -----------------------------------------------------------------------------
+# Uncomment and configure to add more connectors for cloud services
+# additionalConnectors:
+#   - name: elasticsearch
+#     routingKey: scgs-elasticsearch
+#     selector: app=elasticsearch
+#     port: 9200

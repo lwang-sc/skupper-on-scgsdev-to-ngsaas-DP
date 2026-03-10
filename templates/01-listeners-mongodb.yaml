@@ -1,0 +1,85 @@
+{{/*
+# =============================================================================
+# 01-listeners-mongodb.yaml - MongoDB Listeners + Bridge Services
+# =============================================================================
+#
+# PURPOSE:
+#   Creates Skupper Listeners that expose REMOTE MongoDB instances (on DP clusters)
+#   as LOCAL Kubernetes Services on the hub cluster (scgs-dev).
+#   Also creates ExternalName bridge services in the application namespace
+#   (e.g. scai, scai-dev) so apps can access the MongoDB services.
+#
+# WHAT THIS FILE CREATES (per DP × per instance):
+#   1. Listener in 'customers' namespace — Skupper routes traffic to DP's MongoDB
+#   2. Bridge Service (ExternalName) in bridgeNamespace — apps access MongoDB here
+#
+# ROUTING KEY FORMAT:
+#   {sanitized-envKey}.{mongo-name}
+#   Example: ns-dev--dev-dp6.stellar-conf-mongo
+#
+# HOST (SERVICE NAME) FORMAT:
+#   {sanitized-envKey}--{mongo-name}
+#   Example: ns-dev--dev-dp6--stellar-conf-mongo
+#
+# BRIDGE SERVICE:
+#   Created in the DP's bridgeNamespace (e.g. scai-dev for dev-dp6, scai for salesdemo)
+#   ExternalName → {listener-host}.customers.svc.cluster.local
+#
+# TRAFFIC DIRECTION:
+#   App (in scai/scai-dev) → Bridge Service → Listener (in customers) → [Skupper] → DP MongoDB
+#
+# =============================================================================
+*/}}
+{{- if .Values.mongodb.enabled }}
+{{- range $dpType := .Values.mongodb.dpTypes }}
+{{- range $envKey := $dpType.envKeys }}
+{{- range $instance := $dpType.instances }}
+{{- $resourceName := include "skupper.mongoResourceName" (dict "envKey" $envKey.key "instance" $instance.name) }}
+---
+apiVersion: skupper.io/v2alpha1
+kind: Listener
+metadata:
+  name: {{ $resourceName }}
+  namespace: {{ $.Values.namespace }}
+  annotations:
+    description: >-
+      MongoDB Listener for {{ $instance.name }} on DP {{ $envKey.key }} ({{ $dpType.name }}).
+      Creates local service routing to remote MongoDB on the DP.
+      Per-DP routingKey — each DP has its own MongoDB instance.
+      Bridge service in {{ $envKey.bridgeNamespace }} namespace for app access.
+  labels:
+    {{- include "skupper.commonLabels" $ | nindent 4 }}
+    service-type: {{ $.Values.mongodb.labels.serviceType }}
+    managed-by: {{ $.Values.mongodb.labels.managedBy }}
+    env-key: {{ $envKey.key }}
+    dp-type: {{ $dpType.name }}
+    mongodb-instance: {{ $instance.name }}
+spec:
+  routingKey: {{ include "skupper.mongoRoutingKey" (dict "envKey" $envKey.key "instance" $instance.name) }}
+  host: {{ $resourceName }}
+  port: {{ $instance.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $resourceName }}
+  namespace: {{ $envKey.bridgeNamespace }}
+  annotations:
+    description: >-
+      ExternalName bridge for {{ $instance.name }} on DP {{ $envKey.key }}.
+      Bridges from {{ $envKey.bridgeNamespace }} to {{ $.Values.namespace }} namespace,
+      so apps in {{ $envKey.bridgeNamespace }} can access the DP's MongoDB.
+  labels:
+    {{- include "skupper.commonLabels" $ | nindent 4 }}
+    service-type: {{ $.Values.mongodb.labels.serviceType }}
+    managed-by: {{ $.Values.mongodb.labels.managedBy }}
+    bridge-target: {{ $resourceName }}
+    env-key: {{ $envKey.key }}
+    dp-type: {{ $dpType.name }}
+spec:
+  type: ExternalName
+  externalName: {{ $resourceName }}.{{ $.Values.namespace }}.svc.cluster.local
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

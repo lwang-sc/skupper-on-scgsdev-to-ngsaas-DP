@@ -1,0 +1,140 @@
+{{/*
+# =============================================================================
+# 02-connectors-kafka.yaml - All Kafka Connectors + Bridge Services
+# =============================================================================
+#
+# PURPOSE:
+#   Exposes the Kafka cluster on scgs-dev to the Skupper network, allowing
+#   all connected DP clusters to produce/consume messages.
+#
+# WHAT THIS FILE CREATES:
+#
+#   1. BOOTSTRAP Connector + Bridge Service
+#      - Connector: scgs-dev-kafka (routingKey: scgs-dev-kafka, port: 9192)
+#      - Bridge: scgs-dev-kafka-bridge → my-cluster-kafka-bootstrap.ykou.svc
+#      - Handles initial client connection and metadata exchange
+#      - NOTE: Uses port 9192 (Strimzi internal listener). DP Listeners
+#        expose kafka:9092 locally — ports are decoupled via Skupper.
+#
+#   2. PER-BROKER Connectors + Bridge Services (one per broker pod)
+#      - Connector: scgs-dev-kafka-broker-{i} (routingKey: scgs-dev-kafka-broker-{i}, port: 9192)
+#      - Bridge: scgs-dev-kafka-broker-{i}-bridge → my-cluster-dual-role-{i}.my-cluster-kafka-brokers.ykou.svc
+#      - Handles direct broker connections after bootstrap handshake
+#      - Uses port 9192 (same Strimzi internal listener as bootstrap)
+#
+# WHY PER-BROKER CONNECTORS:
+#   After connecting to bootstrap, Kafka clients receive a broker list with
+#   advertisedHost addresses. The client then connects directly to each broker.
+#   Without per-broker Connectors, these connections fail because the broker
+#   addresses are not routable from DP clusters.
+#
+# CROSS-NAMESPACE ACCESS:
+#   Kafka is in 'ykou' namespace, Skupper Site is in 'customers'.
+#   Bridge services (ExternalName) bridge the namespace gap.
+#
+# SCALING:
+#   Bump brokers.replicas when Kafka scales up. Pre-deployed idle Listeners
+#   on DPs auto-activate — no DP-side change needed.
+#
+# TRAFFIC DIRECTION:
+#   DP clusters (Kafka client via Listener) → [Skupper tunnel] → scgs-dev (Kafka via Connector)
+#
+# VERIFICATION:
+#   kubectl get connectors -n {{ .Values.namespace }}
+#   kubectl get svc -n {{ .Values.namespace }} | grep kafka
+#
+# =============================================================================
+*/}}
+
+{{/* ========================== BOOTSTRAP ========================== */}}
+{{- if .Values.kafka.bootstrap.enabled }}
+---
+apiVersion: skupper.io/v2alpha1
+kind: Connector
+metadata:
+  name: {{ .Values.kafka.bootstrap.name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    description: >-
+      Kafka bootstrap connector. Routes initial client connections (port {{ .Values.kafka.bootstrap.port }})
+      to Kafka on scgs-dev. Shared routingKey — one connector serves all DPs.
+  labels:
+    {{- include "skupper.commonLabels" . | nindent 4 }}
+    service-type: {{ .Values.kafka.bootstrap.labels.serviceType }}
+    managed-by: {{ .Values.kafka.bootstrap.labels.managedBy }}
+spec:
+  routingKey: {{ .Values.kafka.bootstrap.routingKey }}
+  {{- if .Values.kafka.bootstrap.bridgeService.enabled }}
+  host: {{ .Values.kafka.bootstrap.bridgeService.name }}
+  {{- else }}
+  selector: {{ .Values.kafka.bootstrap.selector }}
+  {{- end }}
+  port: {{ .Values.kafka.bootstrap.port }}
+{{- end }}
+
+{{/* Bootstrap bridge service */}}
+{{- if and .Values.kafka.bootstrap.enabled .Values.kafka.bootstrap.bridgeService.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.kafka.bootstrap.bridgeService.name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    description: >-
+      ExternalName bridge for Kafka bootstrap.
+      Bridges from {{ .Values.namespace }} to {{ .Values.kafka.bootstrap.bridgeService.targetNamespace }} namespace.
+  labels:
+    {{- include "skupper.commonLabels" . | nindent 4 }}
+    service-type: {{ .Values.kafka.bootstrap.labels.serviceType }}
+    managed-by: {{ .Values.kafka.bootstrap.labels.managedBy }}
+    bridge-target: {{ .Values.kafka.bootstrap.name }}
+spec:
+  type: ExternalName
+  externalName: {{ .Values.kafka.bootstrap.bridgeService.targetService }}.{{ .Values.kafka.bootstrap.bridgeService.targetNamespace }}.svc.cluster.local
+{{- end }}
+
+{{/* ========================== PER-BROKER ========================== */}}
+{{- if .Values.kafka.brokers.enabled }}
+{{- $replicas := .Values.kafka.brokers.replicas | int }}
+{{- range $i := until $replicas }}
+---
+apiVersion: skupper.io/v2alpha1
+kind: Connector
+metadata:
+  name: {{ $.Values.kafka.brokers.namePrefix }}-{{ $i }}
+  namespace: {{ $.Values.namespace }}
+  annotations:
+    description: >-
+      Kafka broker {{ $i }} connector. Direct broker connection after bootstrap handshake.
+      Shared routingKey — one connector serves all DPs.
+  labels:
+    {{- include "skupper.commonLabels" $ | nindent 4 }}
+    service-type: {{ $.Values.kafka.brokers.labels.serviceType }}
+    managed-by: {{ $.Values.kafka.brokers.labels.managedBy }}
+    broker-index: "{{ $i }}"
+spec:
+  routingKey: {{ $.Values.kafka.brokers.routingKeyPrefix }}-{{ $i }}
+  host: {{ $.Values.kafka.brokers.namePrefix }}-{{ $i }}-bridge
+  port: {{ $.Values.kafka.brokers.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Values.kafka.brokers.namePrefix }}-{{ $i }}-bridge
+  namespace: {{ $.Values.namespace }}
+  annotations:
+    description: >-
+      ExternalName bridge for Kafka broker {{ $i }}.
+      Bridges from {{ $.Values.namespace }} to {{ $.Values.kafka.brokers.bridgeService.targetNamespace }} namespace.
+  labels:
+    {{- include "skupper.commonLabels" $ | nindent 4 }}
+    service-type: {{ $.Values.kafka.brokers.labels.serviceType }}
+    managed-by: {{ $.Values.kafka.brokers.labels.managedBy }}
+    bridge-target: {{ $.Values.kafka.brokers.bridgeService.podNamePrefix }}-{{ $i }}
+    broker-index: "{{ $i }}"
+spec:
+  type: ExternalName
+  externalName: {{ $.Values.kafka.brokers.bridgeService.podNamePrefix }}-{{ $i }}.{{ $.Values.kafka.brokers.bridgeService.headlessService }}.{{ $.Values.kafka.brokers.bridgeService.targetNamespace }}.svc.cluster.local
+{{- end }}
+{{- end }}
