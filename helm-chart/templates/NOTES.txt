@@ -82,7 +82,7 @@ Some components are disabled. Current state:
   - Kafka Brokers: {{ if .Values.kafka.brokers.enabled }}enabled{{ else }}disabled{{ end }}
 
 To enable all components:
-  helm upgrade {{ .Release.Name }} . -n {{ .Values.namespace }} \
+  helm upgrade {{ .Release.Name }} ./helm-chart -n {{ .Values.namespace }} \
     --set mongodb.enabled=true \
     --set kafka.bootstrap.enabled=true \
     --set kafka.brokers.enabled=true
@@ -150,8 +150,9 @@ Adding a New DP Cluster:
      Note: envKey can contain underscores (e.g., ns_dev__new-dp).
            They will be automatically sanitized for K8s resource names.
 
-  2. Deploy the updated chart:
-     helm upgrade {{ .Release.Name }} . -n {{ .Values.namespace }}
+  2. Deploy the updated chart (from repo root or from helm-chart/):
+     helm upgrade {{ .Release.Name }} ./helm-chart -n {{ .Values.namespace }}
+     # Or with services-only values: add -f ./helm-chart/values-services-only.yaml
 
   3. Ensure the new DP has:
      - Skupper Site created

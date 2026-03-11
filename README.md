@@ -79,18 +79,30 @@ Using dev-dp6's MongoDB and Kafka connection as an example:
 
 ## Installation
 
+### Initial install (clean cluster — controller + observer + site + services)
+
 ```bash
-# From repo root: point to the helm-chart directory
-helm upgrade --install skupper-scgs-dev ./helm-chart -n customers
+helm upgrade --install skupper-scgs-dev ./helm-chart \
+  -n customers \
+  -f ./helm-chart/values-init.yaml
+```
 
-# Or from helm-chart directory
-cd helm-chart && helm upgrade --install skupper-scgs-dev . -n customers
+### Subsequent upgrades (add DPs, scale Kafka, etc. — skip controller + observer)
 
+```bash
+helm upgrade skupper-scgs-dev ./helm-chart \
+  -n customers \
+  -f ./helm-chart/values-services-only.yaml
+```
+
+### Verify and inspect
+
+```bash
 # Verify resources
 kubectl get site,listeners,connectors -n customers
 
 # Dry-run to see what will be created
-helm template skupper-scgs-dev ./helm-chart -n customers
+helm template skupper-scgs-dev ./helm-chart -n customers -f ./helm-chart/values-init.yaml
 
 # Show diff before upgrade
 helm diff upgrade skupper-scgs-dev ./helm-chart -n customers --suppress-secrets

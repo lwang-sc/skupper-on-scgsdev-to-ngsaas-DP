@@ -1,4 +1,7 @@
-{{- if .Values.controllerNamespace }}
+{{- /* Only create the controller namespace when it is different from the release namespace.
+      When the release is installed with -n skupper and controllerNamespace is skupper,
+      Helm (--create-namespace) or the user already created it; skip to avoid "already exists". */}}
+{{- if and .Values.controllerNamespace (ne .Release.Namespace .Values.controllerNamespace) }}
 apiVersion: v1
 kind: Namespace
 metadata:
