@@ -292,6 +292,38 @@ autosocCloud:
     targetService: autosoc-cloud
 
 # -----------------------------------------------------------------------------
+# AutoTriage Connector Configuration
+# -----------------------------------------------------------------------------
+# Exposes the stellar-auto-triage HTTP service (in scai-dev namespace on scgs-dev)
+# to the Skupper network. DP clusters consume this service via Listeners.
+#
+# Service details (on scgs-dev):
+#   - Service: stellar-auto-triage.scai-dev.svc.cluster.local
+#   - Port: 8091 (HTTP)
+#
+# Direction: DP clusters (HTTP client) → scgs-dev (stellar-auto-triage server)
+#
+# CROSS-NAMESPACE ACCESS:
+#   stellar-auto-triage is in 'scai-dev' namespace, Skupper Site is in 'customers'.
+#   Bridge service (ExternalName) bridges the namespace gap.
+#
+autoTriage:
+  enabled: true
+  name: scgs-dev--scai-dev--stellar-auto-triage
+  routingKey: scgs-dev--scai-dev--stellar-auto-triage
+  port: 8091
+
+  labels:
+    serviceType: auto-triage
+    managedBy: skupper-scgs-dev
+
+  # Bridge: customers ns → scai-dev ns
+  bridgeService:
+    name: scgs-dev--scai-dev--stellar-auto-triage-bridge
+    targetNamespace: scai-dev
+    targetService: stellar-auto-triage
+
+# -----------------------------------------------------------------------------
 # Additional Listeners (for future services)
 # -----------------------------------------------------------------------------
 # Uncomment and configure to add more listeners for other DP services

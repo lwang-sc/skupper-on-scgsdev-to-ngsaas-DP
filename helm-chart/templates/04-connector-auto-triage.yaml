@@ -1,0 +1,75 @@
+{{/*
+# =============================================================================
+# 04-connector-auto-triage.yaml - AutoTriage Connector + Bridge Service
+# =============================================================================
+#
+# PURPOSE:
+#   Exposes the stellar-auto-triage service (in scai-dev namespace on scgs-dev)
+#   to the Skupper network, allowing connected DP clusters to reach it.
+#
+# WHAT THIS FILE CREATES:
+#
+#   1. Connector: scgs-dev--scai-dev--stellar-auto-triage
+#      - routingKey: scgs-dev--scai-dev--stellar-auto-triage
+#        (format: {cluster}--{namespace}--{service})
+#      - port: 8091 (HTTP)
+#      - host: scgs-dev--scai-dev--stellar-auto-triage-bridge (via bridge service)
+#
+#   2. Bridge Service: scgs-dev--scai-dev--stellar-auto-triage-bridge (ExternalName)
+#      - Bridges from 'customers' namespace to 'scai-dev' namespace
+#      - Target: stellar-auto-triage.scai-dev.svc.cluster.local
+#
+# CROSS-NAMESPACE ACCESS:
+#   stellar-auto-triage is in 'scai-dev' namespace, Skupper Site is in 'customers'.
+#   The bridge service (ExternalName) bridges this namespace gap.
+#
+# TRAFFIC DIRECTION:
+#   DP clusters (HTTP client via Listener) → [Skupper tunnel] → scgs-dev (stellar-auto-triage via Connector)
+#
+# VERIFICATION:
+#   kubectl get connectors -n {{ .Values.namespace }} | grep auto-triage
+#   kubectl get svc -n {{ .Values.namespace }} | grep auto-triage
+#
+# =============================================================================
+*/}}
+
+{{- if .Values.autoTriage.enabled }}
+---
+apiVersion: skupper.io/v2alpha1
+kind: Connector
+metadata:
+  name: {{ .Values.autoTriage.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "skupper.commonLabels" . | nindent 4 }}
+    service-type: {{ .Values.autoTriage.labels.serviceType }}
+    managed-by: {{ .Values.autoTriage.labels.managedBy }}
+  annotations:
+    description: >-
+      Connector for stellar-auto-triage service in scai-dev namespace.
+      Routes HTTP traffic (port {{ .Values.autoTriage.port }}) from DP clusters
+      to stellar-auto-triage on scgs-dev via Skupper tunnel.
+spec:
+  routingKey: {{ .Values.autoTriage.routingKey }}
+  host: {{ .Values.autoTriage.bridgeService.name }}
+  port: {{ .Values.autoTriage.port }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.autoTriage.bridgeService.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "skupper.commonLabels" . | nindent 4 }}
+    service-type: {{ .Values.autoTriage.labels.serviceType }}
+    managed-by: {{ .Values.autoTriage.labels.managedBy }}
+    bridge-target: {{ .Values.autoTriage.bridgeService.targetService }}
+  annotations:
+    description: >-
+      ExternalName bridge from 'customers' namespace to 'scai-dev'
+      namespace, enabling Skupper Connector to reach stellar-auto-triage service.
+spec:
+  type: ExternalName
+  externalName: {{ .Values.autoTriage.bridgeService.targetService }}.{{ .Values.autoTriage.bridgeService.targetNamespace }}.svc.cluster.local
+{{- end }}
