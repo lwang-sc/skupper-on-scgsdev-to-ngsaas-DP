@@ -82,6 +82,10 @@ Example for dev-dp6 (bridgeNamespace: `scai-dev`):
 
 - `scgs-dev--scai-dev--autosoc-cloud`
 
+**AutoTriage Connector** — all DPs access the same stellar-auto-triage service.
+
+- `scgs-dev--scai-dev--stellar-auto-triage`
+
 These don't change when a new DP joins.
 
 ## Namespace Layout
@@ -90,7 +94,7 @@ These don't change when a new DP joins.
 scgs-dev cluster
 ├── skupper namespace          ← Controller (cluster scope, grant server)
 ├── customers namespace        ← Site, Listeners, Connectors, Kafka/AutoSOC bridges
-├── scai-dev namespace         ← MongoDB bridge services for dev DPs
+├── scai-dev namespace         ← MongoDB bridge services for dev DPs; AutoSOC + AutoTriage live here
 ├── scai namespace             ← MongoDB bridge services for prod DPs
 └── ykou namespace             ← Kafka (not managed by this chart, Kafka bridges point here)
 ```
@@ -141,6 +145,15 @@ Both derive from the same `envKey` — the DP chart uses `chart-helper.envKeyDns
 
 The hub chart uses `scgs-dev-kafka` which matches what the DP chart derives from `cloud.name: scgs-dev`.
 
+### AutoSOC Cloud / AutoTriage (shared, hub→DPs)
+
+| Hub side (Connector) | DP side (Listener) | Match? |
+|---------------------|---------------------|--------|
+| `scgs-dev--scai-dev--autosoc-cloud` | `{cloud.name}--{cloudNamespace}--{serviceName}` (auto-derived) | Must match |
+| `scgs-dev--scai-dev--stellar-auto-triage` | `{cloud.name}--{cloudNamespace}--{serviceName}` (auto-derived) | Must match |
+
+Both charts derive the routingKey from `cloud.name`, `cloudNamespace`, and `serviceName`. As long as these values are consistent, they match automatically.
+
 ## Values Structure
 
 ```yaml
@@ -175,6 +188,8 @@ kafka:
   brokers: ...
 
 autosocCloud: ...
+
+autoTriage: ...
 ```
 
 See `helm-chart/values.yaml` for the full structure.

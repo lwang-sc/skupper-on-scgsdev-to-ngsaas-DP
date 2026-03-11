@@ -8,7 +8,7 @@ This chart runs on scgs-dev and handles the cloud side for **all** DP clusters. 
 
 ## Overview
 
-Using dev-dp6's MongoDB and Kafka connection as an example:
+Using dev-dp6's MongoDB, Kafka, AutoSOC, and AutoTriage connections as an example:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -31,6 +31,13 @@ Using dev-dp6's MongoDB and Kafka connection as an example:
 │  │  │ ns-dev--dev-dp6--       │   │ → via bridge svcs to ykou ns  │  │     │
 │  │  │   stellar-user-mongo    │   └───────────────────────────────┘  │     │
 │  │  └─────────────────────────┘                                      │     │
+│  │                                                                    │     │
+│  │  Cloud Service Connectors (shared, serve all DPs)                  │     │
+│  │  ┌─────────────────────────────────────────────────────────────┐  │     │
+│  │  │ AutoSOC:    scgs-dev--scai-dev--autosoc-cloud               │  │     │
+│  │  │ AutoTriage: scgs-dev--scai-dev--stellar-auto-triage         │  │     │
+│  │  │ → via bridge svcs to scai-dev ns                            │  │     │
+│  │  └─────────────────────────────────────────────────────────────┘  │     │
 │  └──────────────────────────┬─────────────────────────────────────────┘     │
 │                              │                                              │
 │  ┌───────────────────────────┼────────────────────────────────────────┐     │
@@ -46,13 +53,20 @@ Using dev-dp6's MongoDB and Kafka connection as an example:
 │  ┌───────────────────────────┴────────────────────────────────────────┐     │
 │  │  cloud--scgs-dev namespace — Skupper Site: ngsaas--dev-dp6--...    │     │
 │  │                                                                    │     │
-│  │  MongoDB Connectors (DP chart)     Kafka Listeners (DP chart)      │     │
+│  │  MongoDB Connectors            Kafka Listeners                     │     │
 │  │  ┌─────────────────────────┐   ┌───────────────────────────────┐  │     │
 │  │  │ stellar-conf-mongo      │   │ Bootstrap: kafka:9092         │  │     │
 │  │  │ stellar-data-mongo      │   │ Broker-0: kafka-broker-0:9192 │  │     │
 │  │  │ stellar-user-mongo      │   │ Broker-1: kafka-broker-1:9192 │  │     │
-│  │  │ → Exposes MongoDB pods  │   │ ...+ bridge svcs in default   │  │     │
+│  │  │ → Exposes MongoDB pods  │   │ ...                           │  │     │
 │  │  └─────────────────────────┘   └───────────────────────────────┘  │     │
+│  │                                                                    │     │
+│  │  Cloud Service Listeners (shared)                                  │     │
+│  │  ┌─────────────────────────────────────────────────────────────┐  │     │
+│  │  │ autosoc-cloud:              port 8000                       │  │     │
+│  │  │ stellar-auto-triage-cloud:  port 8091                       │  │     │
+│  │  │ → bridge svcs in default ns for app access                  │  │     │
+│  │  └─────────────────────────────────────────────────────────────┘  │     │
 │  └────────────────────────────────────────────────────────────────────┘     │
 │                                                                             │
 │                           dev-dp6 (DP Cluster)                              │
@@ -67,7 +81,8 @@ Using dev-dp6's MongoDB and Kafka connection as an example:
 | **Site** | Site CR `scgs-dev` in `customers` ns | `site.enabled` |
 | **MongoDB Listeners** | Per-DP Listeners + bridge Services in app ns | `mongodb.enabled` |
 | **Kafka Connectors** | Bootstrap + per-broker Connectors + bridge Services | `kafka.bootstrap.enabled`, `kafka.brokers.enabled` |
-| **AutoSOC Connector** | Connector + bridge Service (testing) | `autosocCloud.enabled` |
+| **AutoSOC Connector** | Connector + bridge Service | `autosocCloud.enabled` |
+| **AutoTriage Connector** | Connector + bridge Service | `autoTriage.enabled` |
 
 ## Prerequisites
 
@@ -75,6 +90,8 @@ Using dev-dp6's MongoDB and Kafka connection as an example:
 - Helm 3.x
 - Kafka service exists in `ykou` namespace (for Kafka connectors)
 - Strimzi `advertisedHost` configured per broker
+- `stellar-auto-triage` service exists in `scai-dev` namespace (for AutoTriage connector)
+- `autosoc-cloud` service exists in `scai-dev` namespace (for AutoSOC connector)
 - DP clusters onboarded with matching Connectors/Listeners
 
 ## Installation
@@ -117,6 +134,7 @@ helm diff upgrade skupper-scgs-dev ./helm-chart -n customers --suppress-secrets
 | `helm-chart/templates/01-listeners-mongodb.yaml` | MongoDB Listeners + bridge services | Listeners + ExternalName Services |
 | `helm-chart/templates/02-connectors-kafka.yaml` | Kafka bootstrap + per-broker Connectors | Connectors + ExternalName Services |
 | `helm-chart/templates/03-connectors-autosoc-cloud.yaml` | AutoSOC Cloud Connector | Connector + ExternalName Service |
+| `helm-chart/templates/04-connector-auto-triage.yaml` | AutoTriage Connector | Connector + ExternalName Service |
 | `helm-chart/templates/_helpers.tpl` | Shared template helpers | — |
 
 ## Configuration
@@ -175,6 +193,14 @@ Each envKey entry specifies:
 | `autosocCloud.port` | HTTP port | `8000` |
 | `autosocCloud.bridgeService.targetNamespace` | Source namespace | `scai-dev` |
 
+### AutoTriage Connector
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `autoTriage.enabled` | Enable AutoTriage connector | `true` |
+| `autoTriage.port` | HTTP port | `8091` |
+| `autoTriage.bridgeService.targetNamespace` | Source namespace | `scai-dev` |
+
 ## Adding a New DP Cluster
 
 1. Add the DP entry to `mongodb.dpTypes[<type>].envKeys` in helm-chart/values.yaml:
@@ -216,6 +242,12 @@ App (scai-dev) → Bridge Service (ExternalName) → Listener (customers) → [S
 App (DP) → Listener (DP) → [Skupper] → Connector (customers) → Bridge Service → Kafka (ykou)
 ```
 
+### AutoSOC Cloud / AutoTriage (DP → Hub)
+
+```
+App (DP, default ns) → Bridge Service (ExternalName) → Listener (cloud--scgs-dev) → [Skupper] → Connector (customers) → Bridge Service → Service (scai-dev)
+```
+
 **Port mapping:**
 
 | Side | Service | Port |
@@ -223,6 +255,10 @@ App (DP) → Listener (DP) → [Skupper] → Connector (customers) → Bridge Se
 | DP | `kafka` Listener — apps connect here | 9092 |
 | Cloud | Bootstrap Connector → `my-cluster-kafka-bootstrap` | 9192 |
 | Cloud | Broker Connectors → individual broker pods | 9192 |
+| DP | `autosoc-cloud` Listener | 8000 |
+| Cloud | AutoSOC Connector → `autosoc-cloud.scai-dev` | 8000 |
+| DP | `stellar-auto-triage-cloud` Listener | 8091 |
+| Cloud | AutoTriage Connector → `stellar-auto-triage.scai-dev` | 8091 |
 
 ## Cross-Namespace Access (Bridge Services)
 
@@ -230,6 +266,7 @@ Skupper Connectors can only reach pods/services in the **same namespace**. Bridg
 
 - **Kafka:** `customers` → `ykou` (Kafka lives in ykou)
 - **AutoSOC:** `customers` → `scai-dev` (autosoc-cloud lives in scai-dev)
+- **AutoTriage:** `customers` → `scai-dev` (stellar-auto-triage lives in scai-dev)
 - **MongoDB:** `scai`/`scai-dev` → `customers` (apps access Listeners in customers)
 
 ## Routing Key Matching
@@ -241,6 +278,8 @@ Skupper Connectors can only reach pods/services in the **same namespace**. Bridg
 | MongoDB user | Listener | Connector | `ns-dev--dev-dp6.stellar-user-mongo` |
 | Kafka bootstrap | Connector | Listener | `scgs-dev-kafka` |
 | Kafka broker-0 | Connector | Listener | `scgs-dev-kafka-broker-0` |
+| AutoSOC Cloud | Connector | Listener | `scgs-dev--scai-dev--autosoc-cloud` |
+| AutoTriage | Connector | Listener | `scgs-dev--scai-dev--stellar-auto-triage` |
 
 ## Naming Convention
 
@@ -292,5 +331,5 @@ kubectl logs -n customers -l skupper.io/component=router
 
 ## Related Charts
 
-- **`skupper-on-ngsaas-DP-to-scgsdev`**: DP-side chart (controller, Site, MongoDB Connectors, Kafka Listeners); chart in `helm-chart/`
+- **`skupper-on-ngsaas-DP-to-scgsdev`**: DP-side chart (controller, Site, MongoDB Connectors, Kafka/AutoSOC/AutoTriage Listeners); chart in `helm-chart/`
 - **`helm-chart/charts/skupper/`**: Skupper controller subchart (shared with DP-side chart)
